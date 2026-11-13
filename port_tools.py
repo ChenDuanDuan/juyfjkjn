@@ -80,7 +80,25 @@ EDITS = [
     # --- ChatFormatting.getByName is gone in 26.x -------------------------
     ("common/tooltip/TooltipTags.kt",
      "val color = requireNotNull(ChatFormatting.getByName(arg)).color",
-     "val color = ChatFormatting.values().firstOrNull { it.name.equals(arg, ignoreCase = true) }?.color", False),
+     "val color: Int? = when (arg.lowercase()) {\n"
+     "                        \"black\" -> 0x000000\n"
+     "                        \"dark_blue\" -> 0x0000AA\n"
+     "                        \"dark_green\" -> 0x00AA00\n"
+     "                        \"dark_aqua\" -> 0x00AAAA\n"
+     "                        \"dark_red\" -> 0xAA0000\n"
+     "                        \"dark_purple\" -> 0xAA00AA\n"
+     "                        \"gold\" -> 0xFFAA00\n"
+     "                        \"gray\" -> 0xAAAAAA\n"
+     "                        \"dark_gray\" -> 0x555555\n"
+     "                        \"blue\" -> 0x5555FF\n"
+     "                        \"green\" -> 0x55FF55\n"
+     "                        \"aqua\" -> 0x55FFFF\n"
+     "                        \"red\" -> 0xFF5555\n"
+     "                        \"light_purple\" -> 0xFF55FF\n"
+     "                        \"yellow\" -> 0xFFFF55\n"
+     "                        \"white\" -> 0xFFFFFF\n"
+     "                        else -> null\n"
+     "                    }", False),
 
     # --- Fabric API networking rename ------------------------------------
     ("platform/fabric/FabricNetworking-21.1.kt",
@@ -158,6 +176,7 @@ FILE_REPLACE["client/CompositeClientTooltipComponentImpl.kt"] = """package dev.o
 import dev.obscuria.fragmentum.api.client.CompositeClientTooltipComponent
 import dev.obscuria.fragmentum.api.common.tooltip.CompositeTooltipComponent
 import net.minecraft.client.gui.Font
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
 import org.jetbrains.annotations.ApiStatus
 
@@ -174,8 +193,33 @@ internal data class CompositeClientTooltipComponentImpl(
 \t\treturn components.maxOf { it.getWidth(font) }
 \t}
 
-\t// TODO(26.3): text/image rendering overrides still use the removed
-\t// GuiGraphics API and have to be re-added with the new extract* methods.
+\toverride fun extractImage(
+\t\tfont: Font,
+\t\tx: Int,
+\t\ty: Int,
+\t\twidth: Int,
+\t\theight: Int,
+\t\tgraphics: GuiGraphicsExtractor
+\t) {
+\t\tvar offset = 0
+\t\tcomponents.forEach {
+\t\t\tit.extractImage(font, x, y + offset, width, height, graphics)
+\t\t\toffset += it.getHeight(font)
+\t\t}
+\t}
+
+\toverride fun extractText(
+\t\tgraphics: GuiGraphicsExtractor,
+\t\tfont: Font,
+\t\tx: Int,
+\t\ty: Int
+\t) {
+\t\tvar offset = 0
+\t\tcomponents.forEach {
+\t\t\tit.extractText(graphics, font, x, y + offset)
+\t\t\toffset += it.getHeight(font)
+\t\t}
+\t}
 
 \tcompanion object {
 
