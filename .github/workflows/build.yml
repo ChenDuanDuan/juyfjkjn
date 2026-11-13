@@ -23,7 +23,7 @@ jobs:
           gradle-version: wrapper
 
       - name: Build with Gradle
-        run: ./gradlew buildAndCollect --no-daemon --stacktrace --console=plain
+        run: ./gradlew :26.3-fabric:buildAndCollect --no-daemon --stacktrace --console=plain
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
