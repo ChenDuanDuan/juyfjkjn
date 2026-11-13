@@ -100,6 +100,13 @@ EDITS = [
      "                        else -> null\n"
      "                    }", False),
 
+    # --- Java sources (relative to the Kotlin root) -----------------------
+    ("../../../../java/dev/obscuria/fragmentum/platform/fabric/FabricClientEntrypoint.java",
+     "TooltipComponentCallback", "ClientTooltipComponentCallback", True),
+    ("../../../../java/dev/obscuria/fragmentum/platform/fabric/datagen/FabricDataGeneratorEntrypoint.java",
+     "pack.addProvider((FabricDataOutput output) -> new ModRecipeProvider(output, generator.getRegistries()));",
+     "// recipe datagen is not needed for the 26.3 port", False),
+
     # --- Fabric API networking rename ------------------------------------
     ("platform/fabric/FabricNetworking-21.1.kt",
      "PayloadTypeRegistry.playS2C()",
@@ -107,6 +114,11 @@ EDITS = [
     ("platform/fabric/FabricNetworking-21.1.kt",
      "PayloadTypeRegistry.playC2S()",
      "PayloadTypeRegistry.serverboundPlay()", False),
+]
+
+# Files removed for 26.3 (recipe datagen API changed and is not needed).
+DELETE_FILES = [
+    "../../../../java/dev/obscuria/fragmentum/platform/fabric/datagen/ModRecipeProvider.java",
 ]
 
 # Whole files that are rewritten for 26.3 (features Obscure Tooltips does not
@@ -268,6 +280,15 @@ def apply_fixes():
         path.write_text(text, encoding="utf-8")
         print(f"ok {rel}: {old[:50]!r}")
         ok += 1
+    for rel in DELETE_FILES:
+        path = SRC / rel
+        if path.exists():
+            path.unlink()
+            print(f"ok {rel}: deleted")
+            ok += 1
+        else:
+            print(f"!! MISSING FILE for delete {rel}")
+            miss += 1
     for rel, content in FILE_REPLACE.items():
         path = SRC / rel
         if not path.exists():
