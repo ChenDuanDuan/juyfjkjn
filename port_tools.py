@@ -54,17 +54,33 @@ EDITS = [
      "return Deferred.create { holder }",
      "@Suppress(\"UNCHECKED_CAST\")\n\t\t\treturn Deferred.create { holder as net.minecraft.core.Holder<T> }", False),
 
-    # --- ClientTooltipComponent.getHeight now takes a Font ----------------
-    ("client/CompositeClientTooltipComponentImpl.kt",
-     "override fun getHeight(): Int {",
-     "override fun getHeight(font: Font): Int {", False),
-    ("client/CompositeClientTooltipComponentImpl.kt",
-     "it.height", "it.getHeight(font)", True),
-
     # --- TagKey keeps location(); only ResourceKey was renamed ------------
     ("common/tags/TagPostProcessorsImpl.kt",
      "computeIfAbsent(tagKey.location())",
      "computeIfAbsent(tagKey.location ())", False),
+
+    # --- Fabric registry builder: createSimple -> create -------------------
+    ("platform/fabric/FabricRegistrar.kt",
+     "FabricRegistryBuilder.createSimple<T>(registryKey)",
+     "FabricRegistryBuilder.create<T>(registryKey)", False),
+
+    # --- Forge Config API Port v5 ----------------------------------------
+    ("config/ConfigBuilderImpl.kt",
+     "fuzs.forgeconfigapiport.fabric.api.neoforge.v4.NeoForgeConfigRegistry.INSTANCE",
+     "fuzs.forgeconfigapiport.fabric.api.v5.ConfigRegistry.INSTANCE", False),
+
+    # --- Pack.ResourcesSupplier has new methods ---------------------------
+    ("common/resource/FragmentumLayer-21.1.kt",
+     "override fun openPrimary(info: PackLocationInfo) = Resources(info, root)",
+     "override fun openMetadata(location: PackLocationInfo): net.minecraft.server.packs.PackMetadataResources = Resources(location, root)", False),
+    ("common/resource/FragmentumLayer-21.1.kt",
+     "override fun openFull(info: PackLocationInfo, metadata: Pack.Metadata) = Resources(info, root)",
+     "override fun openResources(location: PackLocationInfo, metadata: Pack.Metadata): java.util.stream.Stream<net.minecraft.server.packs.PackResources> = java.util.stream.Stream.of(Resources(location, root))", False),
+
+    # --- ChatFormatting.getByName is gone in 26.x -------------------------
+    ("common/tooltip/TooltipTags.kt",
+     "val color = requireNotNull(ChatFormatting.getByName(arg)).color",
+     "val color = ChatFormatting.values().firstOrNull { it.name.equals(arg, ignoreCase = true) }?.color", False),
 
     # --- Fabric API networking rename ------------------------------------
     ("platform/fabric/FabricNetworking-21.1.kt",
@@ -74,6 +90,112 @@ EDITS = [
      "PayloadTypeRegistry.playC2S()",
      "PayloadTypeRegistry.serverboundPlay()", False),
 ]
+
+# Whole files that are rewritten for 26.3 (features Obscure Tooltips does not
+# use are dropped: item properties, colour providers, block-entity renderers,
+# particle and model-layer registration).
+FILE_REPLACE = {}
+
+FILE_REPLACE["api/client/ClientRegistrar.kt"] = """package dev.obscuria.fragmentum.api.client
+
+import dev.obscuria.fragmentum.api.registry.Deferred
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
+import net.minecraft.client.renderer.entity.EntityRendererProvider
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.EntityType
+import net.minecraft.world.inventory.tooltip.TooltipComponent
+
+interface ClientRegistrar {
+
+\tfun <T : TooltipComponent> registerTooltipComponent(
+\t\ttype: Class<T>,
+\t\tfactory: (T) -> ClientTooltipComponent
+\t)
+
+\tfun <T : Entity> registerEntityRenderer(
+\t\ttype: Deferred<EntityType<T>>,
+\t\tprovider: EntityRendererProvider<T>
+\t)
+}
+"""
+
+FILE_REPLACE["platform/fabric/FabricClientRegistrar.kt"] = """package dev.obscuria.fragmentum.platform.fabric
+
+//? fabric {
+/*import dev.obscuria.fragmentum.api.client.ClientRegistrar
+import dev.obscuria.fragmentum.api.registry.Deferred
+import dev.obscuria.fragmentum.client.TooltipComponentRegistry
+import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
+import net.minecraft.client.renderer.entity.EntityRendererProvider
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.EntityType
+import net.minecraft.world.inventory.tooltip.TooltipComponent
+import org.jetbrains.annotations.ApiStatus
+
+@ApiStatus.Internal
+internal data class FabricClientRegistrar(val modid: String) : ClientRegistrar {
+
+\toverride fun <T : TooltipComponent> registerTooltipComponent(
+\t\ttype: Class<T>,
+\t\tfactory: (T) -> ClientTooltipComponent
+\t) {
+\t\tTooltipComponentRegistry.register(type, factory)
+\t}
+
+\toverride fun <T : Entity> registerEntityRenderer(
+\t\ttype: Deferred<EntityType<T>>,
+\t\tprovider: EntityRendererProvider<T>
+\t) {
+\t\tEntityRendererRegistry.register(type.get(), provider)
+\t}
+}
+*///?}
+"""
+
+FILE_REPLACE["client/CompositeClientTooltipComponentImpl.kt"] = """package dev.obscuria.fragmentum.client
+
+import dev.obscuria.fragmentum.api.client.CompositeClientTooltipComponent
+import dev.obscuria.fragmentum.api.common.tooltip.CompositeTooltipComponent
+import net.minecraft.client.gui.Font
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
+import org.jetbrains.annotations.ApiStatus
+
+@ApiStatus.Internal
+internal data class CompositeClientTooltipComponentImpl(
+\toverride val components: List<ClientTooltipComponent>
+) : CompositeClientTooltipComponent {
+
+\toverride fun getHeight(font: Font): Int {
+\t\treturn components.sumOf { it.getHeight(font) }
+\t}
+
+\toverride fun getWidth(font: Font): Int {
+\t\treturn components.maxOf { it.getWidth(font) }
+\t}
+
+\t// TODO(26.3): text/image rendering overrides still use the removed
+\t// GuiGraphics API and have to be re-added with the new extract* methods.
+
+\tcompanion object {
+
+\t\tfun create(component: CompositeTooltipComponent): CompositeClientTooltipComponentImpl {
+\t\t\tval components = component.components.filterNotNull().map(ClientTooltipComponent::create)
+\t\t\treturn CompositeClientTooltipComponentImpl(components)
+\t\t}
+
+\t\tfun <T : ClientTooltipComponent> findFirst(type: Class<T>, components: List<ClientTooltipComponent?>): T? {
+\t\t\treturn components.firstNotNullOfOrNull {
+\t\t\t\twhen {
+\t\t\t\t\ttype.isInstance(it) -> type.cast(it)
+\t\t\t\t\tit is CompositeClientTooltipComponent -> findFirst(type, it.components)
+\t\t\t\t\telse -> null
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t}
+}
+"""
 
 # (file, regex, replacement)
 REGEX_EDITS = [
@@ -102,6 +224,15 @@ def apply_fixes():
         path.write_text(text, encoding="utf-8")
         print(f"ok {rel}: {old[:50]!r}")
         ok += 1
+    for rel, content in FILE_REPLACE.items():
+        path = SRC / rel
+        if not path.exists():
+            print(f"!! MISSING FILE for replace {rel}")
+            miss += 1
+            continue
+        path.write_text(content, encoding="utf-8")
+        print(f"ok {rel}: file replaced")
+        ok += 1
     for rel, pattern, repl in REGEX_EDITS:
         path = SRC / rel
         text = path.read_text(encoding="utf-8")
@@ -119,23 +250,26 @@ def apply_fixes():
 # ----------------------------------------------------------------------
 # API inspection: prints signatures straight from the downloaded jars.
 # ----------------------------------------------------------------------
-# Classes whose full public signature we want to see (simple names).
+# Classes whose public signature we want to see (simple names or full names).
 SHOW = [
-    "ClientTooltipComponent", "BlockEntityRendererProvider", "ChatFormatting",
-    "PayloadTypeRegistry", "FabricRegistryBuilder", "DynamicRegistries",
-    "PackLocationInfo", "PackMetadataResources", "TagKey",
-    "NeoForgeConfigRegistry", "ForgeConfigRegistry", "ConfigRegistry",
-    "ParticleFactoryRegistry", "ColorProviderRegistry",
-    "EntityModelLayerRegistry", "ModelLayerRegistry",
-    "GuiGraphicsExtractor", "GuiGraphics",
-]
-# Substrings: list every class whose name contains one of these.
-FIND = [
-    "GuiGraphics", "MultiBufferSource", "BlockAndTintGetter",
-    "ClampedItemPropertyFunction", "ItemProperties", "ParticleFactoryRegistry",
-    "ColorProviderRegistry", "ModelLayerRegistry", "ConfigRegistry",
-    "PackMetadataResources", "RegistryBuilder", "TooltipComponent",
-    "ParticleProviderRegistry",
+    "net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent",
+    "net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider",
+    "net.minecraft.ChatFormatting",
+    "net.minecraft.server.packs.repository.Pack",
+    "net.minecraft.server.packs.repository.Pack$ResourcesSupplier",
+    "net.minecraft.server.packs.repository.Pack$Metadata",
+    "net.minecraft.server.packs.PackResources",
+    "net.minecraft.resources.Identifier",
+    "net.minecraft.resources.ResourceKey",
+    "net.minecraft.client.renderer.MultiBufferSource",
+    "net.minecraft.client.renderer.block.BlockAndTintGetter",
+    "net.minecraft.client.particle.ParticleProvider",
+    "net.minecraft.client.renderer.entity.EntityRendererProvider",
+    "net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry",
+    "net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry",
+    "net.fabricmc.fabric.api.client.rendering.v1.ClientTooltipComponentCallback",
+    "net.minecraft.client.gui.Font",
+    "net.minecraft.client.renderer.state.gui.GuiRenderState",
 ]
 
 
@@ -165,44 +299,41 @@ def javap_path():
 def inspect_api():
     JAVAP = javap_path()
     print("\n=== API INSPECTION START ===", flush=True)
-    index = {}  # fqcn -> jar
+    index = {}  # fqcn -> [jars]
     for jar in find_jars():
         try:
             with zipfile.ZipFile(jar) as z:
                 for name in z.namelist():
                     if name.endswith(".class") and "module-info" not in name:
-                        index.setdefault(name[:-6].replace("/", "."), jar)
+                        index.setdefault(name[:-6].replace("/", "."), []).append(jar)
         except Exception:
             continue
     print(f"indexed {len(index)} classes", flush=True)
 
-    for q in FIND:
-        hits = sorted(c for c in index if q in c.split(".")[-1] and "$" not in c)
-        print(f"\n-- classes containing '{q}': {len(hits)}")
-        for c in hits[:15]:
-            print("   ", c)
+    # The real 26.3 Minecraft jar is the one that has GuiGraphicsExtractor.
+    marker = index.get("net.minecraft.client.gui.GuiGraphicsExtractor", [])
+    mc_jar = marker[0] if marker else None
+    print("minecraft 26.3 jar:", mc_jar, flush=True)
 
-    done = set()
-    for simple in SHOW:
-        for fqcn, jar in sorted(index.items()):
-            if fqcn.split(".")[-1] == simple and fqcn not in done:
-                done.add(fqcn)
-                print(f"\n##### {fqcn}")
-                r = subprocess.run([JAVAP, "-public", "-cp", jar, fqcn],
-                                   capture_output=True, text=True)
-                lines = (r.stdout or r.stderr).splitlines()
-                for line in lines[:90]:
-                    print(line)
-                if len(lines) > 90:
-                    print(f"... ({len(lines) - 90} more lines)")
-    # Pack.ResourcesSupplier is an inner class.
-    for fqcn in ["net.minecraft.server.packs.repository.Pack$ResourcesSupplier",
-                 "net.minecraft.server.packs.repository.Pack$Metadata"]:
-        if fqcn in index:
-            print(f"\n##### {fqcn}")
-            r = subprocess.run([JAVAP, "-public", "-cp", index[fqcn], fqcn],
-                               capture_output=True, text=True)
-            print(r.stdout or r.stderr)
+    def pick(fqcn):
+        jars = index.get(fqcn, [])
+        if mc_jar and mc_jar in jars:
+            return mc_jar
+        return jars[0] if jars else None
+
+    for fqcn in SHOW:
+        jar = pick(fqcn)
+        if jar is None:
+            print(f"\n##### {fqcn}\n(not found in any jar)")
+            continue
+        print(f"\n##### {fqcn}   [{os.path.basename(jar)}]")
+        r = subprocess.run([JAVAP, "-public", "-cp", jar, fqcn],
+                           capture_output=True, text=True)
+        lines = (r.stdout or r.stderr).splitlines()
+        for line in lines[:120]:
+            print(line)
+        if len(lines) > 120:
+            print(f"... ({len(lines) - 120} more lines)")
     print("=== API INSPECTION END ===", flush=True)
 
 
